@@ -1,7 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import Link from 'next/link';
-import matter from 'gray-matter';
+import remarkFrontmatter from 'remark-frontmatter';
+import remarkGfm from 'remark-gfm';
+import { serialize } from 'next-mdx-remote/serialize';
+import { Metadata } from 'next';
 
 interface Post {
   slug: string;
@@ -11,35 +14,62 @@ interface Post {
   };
 }
 
-const getPosts = () => {
+const isFrontMatter = (data: any): data is { title: string; date: string } => {
+  return data && typeof data.title === 'string' && typeof data.date === 'string';
+};
+
+const getPosts = async () => {
   const files = fs.readdirSync(path.join(process.cwd(), 'content/posts'));
-  const posts = files.map((filename) => {
-    const markdownWithMeta = fs.readFileSync(
-      path.join('content/posts', filename),
-      'utf-8'
-    );
-    const { data: frontMatter } = matter(markdownWithMeta);
+  const posts = await Promise.all(files.map(async (filename) => {
+    const filePath = path.join('content/posts', filename);
+    const markdownWithMeta = fs.readFileSync(filePath, 'utf-8');
+    const mdxSource = await serialize(markdownWithMeta, {
+      mdxOptions: {
+        remarkPlugins: [remarkFrontmatter, remarkGfm],
+      },
+    });
+
+    if (!isFrontMatter(mdxSource.frontmatter)) {
+      throw new Error('Invalid frontmatter');
+    }
+
     return {
       slug: filename.replace('.mdx', ''),
-      frontMatter,
+      frontMatter: mdxSource.frontmatter,
     };
-  });
+  }));
+
   return posts;
 };
 
+export const metadata: Metadata = {
+  title: 'Blog',
+  description: 'Lista de posts',
+};
+
 const Home = async () => {
-  const posts = getPosts();
+  const posts = await getPosts();
 
   return (
-    <div>
+    <div style={{ padding: '20px', maxWidth: '800px', margin: 'auto' }}>
       <h1>Blog</h1>
-      <ul>
+      <ul style={{ listStyle: 'none', padding: 0 }}>
         {posts.map(({ slug, frontMatter }) => (
-          <li key={slug}>
-            <Link href={`/posts/${slug}`}>
-              {frontMatter.title}
+          <li key={slug} style={{ marginBottom: '20px' }}>
+            <Link href={`/posts/${slug}`} style={{
+                textDecoration: 'none',
+                color: 'inherit',
+                display: 'block',
+                border: '1px solid #ddd',
+                padding: '20px',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}>
+            
+                <h2>{frontMatter.title}</h2>
+                <p>{frontMatter.date}</p>
+             
             </Link>
-            <p>{frontMatter.date}</p>
           </li>
         ))}
       </ul>
